@@ -43,4 +43,23 @@ class Deck:
             random.shuffle(self._cards)
             return
 
+    def is_empty(self) -> bool:
+        """Return whether this deck is empty"""
+        return len(self._cards) == 0
+
+    def draw(self) -> tuple[int, int]:
+        """
+        Draw a card from the top of the deck.
+        Raise ValueError if the deck is empty
+        """
+        if self.is_empty():
+            raise ValueError("This deck is empty: No cards to draw")
+        else:
+            return self._cards.pop()
+
+    def reshuffle(self) -> None:
+        """
+        Reshuffle the deck in place.
+        """
+        random.shuffle(self._cards)
 
