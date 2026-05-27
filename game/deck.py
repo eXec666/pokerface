@@ -1,10 +1,16 @@
 """
-Module that defines the deck, and methods for manipulating a deck.
+Module that defines the deck and table interfaces.
 """
 import random
 
 # suits global var
 SUITS = {1: "club", 2: "diamond", 3: "heart", 4: "spade"}
+
+"""
+========================================================================================================================
+                                                    DECK INTERFACE
+========================================================================================================================                                                    
+"""
 
 class Deck:
     """
@@ -50,16 +56,19 @@ class Deck:
     def draw(self) -> tuple[int, int]:
         """
         Draw a card from the top of the deck.
-        Raise ValueError if the deck is empty
+        Raise ValueError if the deck is empty.
         """
         if self.is_empty():
             raise ValueError("This deck is empty: No cards to draw")
-        else:
-            return self._cards.pop()
+
+        return self._cards.pop()
 
     def reshuffle(self) -> None:
         """
         Reshuffle the deck in place.
+        Raise ValueError if the deck is empty.
         """
-        random.shuffle(self._cards)
+        if self.is_empty():
+            raise ValueError("This deck is empty: No cards to reshuffle")
 
+        random.shuffle(self._cards)
