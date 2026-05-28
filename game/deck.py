@@ -1,10 +1,25 @@
 """
-Module that defines the deck, and methods for manipulating a deck.
+Module that defines the deck and table interfaces.
 """
 import random
 
 # suits global var
 SUITS = {1: "club", 2: "diamond", 3: "heart", 4: "spade"}
+
+# helpers
+def _poker_value(denom: int) -> int:
+    """
+    Return the poker comparison value of a denomination, mapping Ace from 1 -> 14.
+    Needed for cases when denominations are directly compared (like finding high card)
+    """
+    return 14 if denom == 1 else denom
+
+
+"""
+========================================================================================================================
+                                                    DECK INTERFACE
+========================================================================================================================                                                    
+"""
 
 class Deck:
     """
@@ -50,16 +65,22 @@ class Deck:
     def draw(self) -> tuple[int, int]:
         """
         Draw a card from the top of the deck.
-        Raise ValueError if the deck is empty
+        Raise ValueError if the deck is empty.
         """
         if self.is_empty():
             raise ValueError("This deck is empty: No cards to draw")
-        else:
-            return self._cards.pop()
 
-    def reshuffle(self) -> None:
-        """
-        Reshuffle the deck in place.
-        """
-        random.shuffle(self._cards)
+        return self._cards.pop()
 
+    def reshuffle(self, n: int = 1) -> None:
+        """
+        Reshuffle the deck in place n consecutive times.
+        Raise ValueError if the deck is empty.
+        Raise ValueError if n < 1.
+        """
+        if self.is_empty():
+            raise ValueError("This deck is empty: No cards to reshuffle")
+        elif n < 1:
+            raise ValueError("The deck must be shuffled at least once.")
+        for i in range(n):
+            random.shuffle(self._cards)
