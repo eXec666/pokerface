@@ -1,5 +1,5 @@
 """#TODO: Module Description"""
-from player import Player, ActionType
+from players.player import Player, ActionType
 from typing import Optional
 from game.game_state import GameState, Pot
 from game.evaluator import best_hand, compare_hands

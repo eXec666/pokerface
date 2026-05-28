@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from enum import Enum
 from dataclasses import dataclass, field
 if TYPE_CHECKING:
-    from player import Player
+    from players.player import Player
 from game.deck import Deck
 
 @dataclass

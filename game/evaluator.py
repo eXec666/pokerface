@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Optional
 from game.deck import Deck, _poker_value
 from game.game_state import GameState
-from player import Player
+from players.player import Player
 
 class Combination(Enum):
     HIGH_CARD = 0
