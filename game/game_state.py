@@ -20,8 +20,11 @@ class Pot:
         - self.amount >= 0.0
         - len(self.eligible) >= 1
     """
-    amount: float
+    amount: int
     eligible: list[int] = field(default_factory=list)
+
+    def __repr__(self):
+        return f"Pot(amount={self.amount / 100:.2f}, eligible={self.eligible})"
         
 class Street(Enum):
     PREFLOP = 0
@@ -53,7 +56,7 @@ class GameState:
     Representation Invariants:
         - len(self.players) >= 2
         - len(self.active_players) >= 1
-        - self.pot >= 0.0
+        - all(p.amount >= 0 for p in self.pots)
         - 0 <= len(self.table) <= 5
         - self.current_bet >= 0.0
         - 0 <= self.curr_actor < len(self.active_players)
@@ -86,7 +89,7 @@ class GameState:
         self.active_players = list(range(len(players)))
         self.curr_dealer = curr_dealer
         self.street = Street.PREFLOP
-        self.pots = [Pot(amount=0.0, eligible=list(range(len(players))))]
+        self.pots = [Pot(amount=0, eligible=list(range(len(players))))]
         self.current_bet = 0.0
         self.last_raise_amount = big_blind
         self.player_bets = {i: 0.0 for i in range(len(players))}
@@ -95,16 +98,14 @@ class GameState:
         self.small_blind = small_blind
         self.big_blind = big_blind
 
-        # Heads-up (1v1) Case: Dealer is himself the small_blind, and acts first.
-        if len(players) == 2:
-            self.curr_actor = curr_dealer
-        else:
-            self.curr_actor = (curr_dealer + 3) % len(players)
+        self.curr_actor = 0  # will be set by Game after active_players is filtered
 
     @property
-    def pot(self) -> float:
+    def pot(self) -> int:
         """Return the total amount across all pots."""
         return sum(p.amount for p in self.pots)
+
+
 
     def get_current_actor(self) -> Player:
         """Return the Player object whose turn it is to act."""

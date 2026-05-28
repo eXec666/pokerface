@@ -1,8 +1,12 @@
 """#TODO: Module Description"""
-from players.player import Player, ActionType
 from typing import Optional
+import logging
+from players.player import Player, ActionType
 from game.game_state import GameState, Pot
 from game.evaluator import best_hand, compare_hands
+
+# logger setup
+logger = logging.getLogger(__name__)
 
 class IllegalActionError(Exception):
     """
@@ -19,8 +23,9 @@ class Game:
     Instance Attributes:
         - players: all players in the session
         - dealer: index of the current dealer
-        - small_blind: small blind amount
-        - big_blind: big blind amount
+        - small_blind: small blind amount (in cents)
+        - big_blind: big blind amount (in cents)
+        - buy_in: starting balance for all players (in cents)
         - state: The game's current GameState, None between hands
 
     Representation Invariants:
@@ -28,21 +33,44 @@ class Game:
     """
     players: list[Player]
     dealer: int
-    small_blind: float
-    big_blind: float
+    small_blind: int
+    big_blind: int
+    buy_in: int
     state: Optional[GameState]
 
-    def __init__(self, players: list[Player], small_blind: float, big_blind: float) -> None:
+    def __init__(self, players: list[Player], small_blind: int, big_blind: int, buy_in: int) -> None:
         self.players = players
         self.dealer = 0
         self.small_blind = small_blind
         self.big_blind = big_blind
+        self.buy_in = buy_in
         self.state = None
+
+        # Set player balances
+        for player in self.players:
+            player.balance = buy_in
+
+        # configure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S'
+        )
 
     def run(self) -> None:
         """
         Run the session until one player remains
         """
+        # log start of the game
+        logger.info("=" * 50)
+        logger.info("GAME STARTED")
+        logger.info("=" * 50)
+        logger.info(f"Players:         {len(self.players)}")
+        logger.info(f"Buy-in:           {self.buy_in / 100:.2f}")
+        logger.info(f"Small blind:      {self.small_blind / 100:.2f}")
+        logger.info(f"Big blind:        {self.big_blind / 100:.2f}")
+        logger.info("=" * 50)
+
         while len(self._active_players()) > 1:
             self._play_hand()
             self.dealer = (self.dealer + 1) % len(self.players)
@@ -53,7 +81,26 @@ class Game:
         """
         for player in self.players:
             player.hand = None
+            logger.debug(f"Player {self.players.index(player)} balance reset to: {player.balance}")
         self.state = GameState(self.players, self.dealer, self.small_blind, self.big_blind)
+        # remove players with no balance from the hand
+        self.state.active_players = [i for i in self.state.active_players
+                                     if self.state.players[i].balance > 0]
+
+        n = len(self.state.active_players)
+        dealer_pos = self.state.active_players.index(self.dealer) if self.dealer in self.state.active_players else 0
+
+        if n == 2:
+            self.state.curr_actor = dealer_pos
+        else:
+            self.state.curr_actor = (dealer_pos + 3) % n
+
+        self.state.curr_actor %= n  # safety wrap
+
+        logger.info(f"Received game state | "
+                    f"Dealer: Player {self.dealer} | "
+                    f"Current actor: Player {self.state.active_players[self.state.curr_actor]}")
+
         self._post_blinds()
         self._deal_hole_cards()
         self._betting_round()
@@ -183,6 +230,8 @@ class Game:
         for i in order:
             self.state.players[i].hand = [first_cards[i], self.state.deck.draw()]
 
+        logger.info(f"Dealt Player Cards to {len(self.state.players)} players.")
+
         return
 
     def _deal_community_cards(self, n: int) -> None:
@@ -228,6 +277,16 @@ class Game:
             self._handle_all_in(small_blind_idx, small_blind_amount)
         if big_blind_amount < self.state.big_blind:
             self._handle_all_in(big_blind_idx, big_blind_amount)
+
+        non_empty_pots = [p for p in self.state.pots if p.amount > 0]
+        logger.info(f"Blinds posted | "
+                    f"Player {small_blind_idx} paid: {small_blind_amount / 100:.2f} | "
+                    f"Player {big_blind_idx} paid: {big_blind_amount / 100:.2f} | "
+                    f"Pot: {self.state.pot / 100:.2f}")
+        logger.info(f"All non-empty Pots: {non_empty_pots}")
+
+
+
 
     def _handle_all_in(self, all_in_idx: int, all_in_amount: float) -> None:
         """
@@ -279,10 +338,11 @@ class Game:
                 i for i in pot.eligible
                 if compare_hands(hands[i], hands[best_idx]) == 0
             ]
-            # split pot among winners
-            share = pot.amount / len(winners)
-            for i in winners:
-                self.state.players[i].balance += share
+            share = pot.amount // len(winners)
+            remainder = pot.amount % len(winners)
+            for i, winner_idx in enumerate(winners):
+                bonus = 1 if i < remainder else 0
+                self.state.players[winner_idx].balance += share + bonus
 
     def _active_players(self) -> list[Player]:
         """
@@ -292,3 +352,9 @@ class Game:
             - self._active_players checks for players who are able to bet anything at all.
         """
         return [p for p in self.players if p.balance > 0]
+
+if __name__ == "__main__":
+    from players.player import TestPlayer
+    players = [TestPlayer() for _ in range(3)]
+    game = Game(players, small_blind=1, big_blind=2, buy_in=100)
+    game.run()
