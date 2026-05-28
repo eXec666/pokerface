@@ -4,6 +4,9 @@ from typing import Optional
 from game_state import GameState
 
 class IllegalActionError(Exception):
+    """
+    An Error indicating an action that is illegal according to the rules of the game.
+    """
     def __init__(self, message: str) -> None:
         self.message = message
         super().__init__(self.message)
@@ -18,6 +21,9 @@ class Game:
         - small_blind: small blind amount
         - big_blind: big blind amount
         - state: The game's current GameState, None between hands
+
+    Representation Invariants:
+        -
     """
     players: list[Player]
     dealer: int
@@ -207,4 +213,10 @@ class Game:
         pass
 
     def _active_players(self) -> list[Player]:
+        """
+        Return a list of Player objects that are active in the current game. That is, they can play more hands.
+        Note: this is NOT the same as state.active_players.
+            - state.active_players checks for ability to place a bet within a hand.
+            - self._active_players checks for players who are able to bet anything at all.
+        """
         return [p for p in self.players if p.balance > 0]

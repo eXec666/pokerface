@@ -11,6 +11,10 @@ class Street(Enum):
 
 class GameState:
     """
+    A class to encapsulate all the information available about a game of poker at a point in time.
+
+    The state of a poker game is  as all the player, bet and card data
+    on a particular player's turn during a single hand in that game.
     Instance Attributes:
         - players: ALL players in the session (including folded ones this hand).
         - active_players: indices into players[] who haven't folded.

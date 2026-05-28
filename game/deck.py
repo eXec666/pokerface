@@ -6,6 +6,15 @@ import random
 # suits global var
 SUITS = {1: "club", 2: "diamond", 3: "heart", 4: "spade"}
 
+# helpers
+def _poker_value(denom: int) -> int:
+    """
+    Return the poker comparison value of a denomination, mapping Ace from 1 -> 14.
+    Needed for cases when denominations are directly compared (like finding high card)
+    """
+    return 14 if denom == 1 else denom
+
+
 """
 ========================================================================================================================
                                                     DECK INTERFACE
