@@ -42,17 +42,30 @@ class Game:
 
     def _play_hand(self) -> None:
         """Play a full hand in the current game."""
+        # reset player hands
+        for player in self.players:
+            player.hand = None
         # Init the game state
         self.state = GameState(self.players, self.dealer, self.small_blind, self.big_blind)
+        # Resolve Blind stuff
         self._post_blinds()
+        # Deal cards
         self._deal_hole_cards()
+        # Bet round 1
         self._betting_round()
-        self._deal_community_cards(3) # Flop
+        # Flop
+        self._deal_community_cards(3)
+        # Bet round 2
         self._betting_round()
-        self._deal_community_cards(1) # Turn
+        # Turn
+        self._deal_community_cards(1)
+        # Bet round 3
         self._betting_round()
-        self._deal_community_cards(1) # River
+        # River
+        self._deal_community_cards(1)
+        # Final bets
         self._betting_round()
+        # Showdown
         self._showdown()
 
     def _betting_round(self) -> None:
@@ -142,7 +155,7 @@ class Game:
 
         # Deal second cards and assign hands
         for i in order:
-            self.state.players[i].hand = (first_cards[i], self.state.deck.draw())
+            self.state.players[i].hand = [first_cards[i], self.state.deck.draw()]
 
         return
 

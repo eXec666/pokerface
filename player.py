@@ -30,13 +30,14 @@ class Player(ABC):
     Abstract Base class for a poker player.
 
     Instance Attributes:
-        - hand: the players current hand, which is stored as a tuple of two card tuples. Immutable.
+        - hand: the players current hand, which is stored as a list of two card tuples.
         - balance: the amount of money that the player currently holds
 
     Representation Invariants:
         - self.balance >= 0
+        - len(self.hand) == 2 or self.hand is None
     """
-    hand: Optional[tuple[tuple[int, int], tuple[int, int]]] = None
+    hand: Optional[list[tuple[int, int]]] = None
     balance: float
 
     def __init__(self, balance: float) -> None:
