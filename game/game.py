@@ -2,7 +2,7 @@
 from typing import Optional
 import logging
 from players.player import Player, ActionType
-from game.game_state import GameState, Pot
+from game.game_state import GameState, Pot, Street
 from game.evaluator import best_hand, compare_hands
 
 # logger setup
@@ -103,21 +103,27 @@ class Game:
 
         self._post_blinds()
         self._deal_hole_cards()
+        self._betting_round() #Preflop
+        if len(self.state.active_players) <= 1:
+            self._showdown()
+            return
+
+        self._deal_community_cards(3, Street.FLOP)
+        self.state.street = Street.FLOP
         self._betting_round()
         if len(self.state.active_players) <= 1:
             self._showdown()
             return
-        self._deal_community_cards(3)
+
+        self._deal_community_cards(1, Street.TURN)
+        self.state.street = Street.TURN
         self._betting_round()
         if len(self.state.active_players) <= 1:
             self._showdown()
             return
-        self._deal_community_cards(1)
-        self._betting_round()
-        if len(self.state.active_players) <= 1:
-            self._showdown()
-            return
-        self._deal_community_cards(1)
+
+        self._deal_community_cards(1, Street.RIVER)
+        self.state.street = Street.RIVER
         self._betting_round()
         self._showdown()
 
@@ -135,6 +141,7 @@ class Game:
         """
         # Early return if only one player remains
         if len(self.state.active_players) <= 1:
+            logger.info(f" {len(self.state.active_players)} Player(s) remaining. No bets to make")
             return
 
         # wrap curr_actor in case active_players shrank since last round
@@ -150,10 +157,12 @@ class Game:
             actor = self.state.players[actor_idx]
             total_bet = self.state.player_bets[actor_idx]
             action = actor.get_action(self.state)
+            logger.info(f"Player {actor_idx} response: {action}")
 
             # Folding
             if action.action_type == ActionType.FOLD:
                 self.state.active_players.pop(self.state.curr_actor)
+                logger.info(f"Player {actor_idx} removed from active_players")
                 folded = True
                 if len(self.state.active_players) <= 1:
                     break
@@ -234,7 +243,7 @@ class Game:
 
         return
 
-    def _deal_community_cards(self, n: int) -> None:
+    def _deal_community_cards(self, n: int, street: Street) -> None:
         """
         Deal the cards onto the table for each street:
         Draw and discard the burn card.
@@ -246,6 +255,8 @@ class Game:
         for i in range(n):
             card = self.state.deck.draw()
             self.state.table.append(card)
+
+        logger.info(f"Dealt {street} | Table: {self.state.table}")
 
     def _post_blinds(self) -> None:
         """

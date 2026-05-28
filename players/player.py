@@ -25,7 +25,11 @@ class Action:
         - amount: the associated betting amount (only relevant for CALL & RAISE actions)
     """
     action_type: ActionType
-    amount: float = 0.0
+    amount: int = 0
+
+    def __repr__(self) -> str:
+        return f"{self.action_type}, amount: {self.amount}"
+
 
 class Player(ABC):
     """
