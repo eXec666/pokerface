@@ -1,11 +1,13 @@
 """Module that defines the Player Base Class."""
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 from typing import Optional
-import random
 from dataclasses import dataclass
 from enum import Enum
 
-from game.game_state import GameState
+if TYPE_CHECKING:
+    from game.game_state import GameState
 
 
 class ActionType(Enum):

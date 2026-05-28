@@ -1,7 +1,8 @@
 """#TODO: Module Description"""
 from player import Player, ActionType
 from typing import Optional
-from game_state import GameState
+from game.game_state import GameState, Pot
+from game.evaluator import best_hand, compare_hands
 
 class IllegalActionError(Exception):
     """
@@ -47,31 +48,30 @@ class Game:
             self.dealer = (self.dealer + 1) % len(self.players)
 
     def _play_hand(self) -> None:
-        """Play a full hand in the current game."""
-        # reset player hands
+        """
+        #TODO: Docstring
+        """
         for player in self.players:
             player.hand = None
-        # Init the game state
         self.state = GameState(self.players, self.dealer, self.small_blind, self.big_blind)
-        # Resolve Blind stuff
         self._post_blinds()
-        # Deal cards
         self._deal_hole_cards()
-        # Bet round 1
         self._betting_round()
-        # Flop
+        if len(self.state.active_players) <= 1:
+            self._showdown()
+            return
         self._deal_community_cards(3)
-        # Bet round 2
         self._betting_round()
-        # Turn
+        if len(self.state.active_players) <= 1:
+            self._showdown()
+            return
         self._deal_community_cards(1)
-        # Bet round 3
         self._betting_round()
-        # River
+        if len(self.state.active_players) <= 1:
+            self._showdown()
+            return
         self._deal_community_cards(1)
-        # Final bets
         self._betting_round()
-        # Showdown
         self._showdown()
 
     def _betting_round(self) -> None:
@@ -86,12 +86,19 @@ class Game:
         the bets that were made to future players.
         The loop stops when a whole cycle of bets has been completed with no player raising.
         """
-        # track the last player who raised.
+        # Early return if only one player remains
+        if len(self.state.active_players) <= 1:
+            return
+
+        # wrap curr_actor in case active_players shrank since last round
+        self.state.curr_actor %= len(self.state.active_players)
+
+        # track the last player who raised
         last_aggressor = self.state.active_players[self.state.curr_actor]
-        # boolean folded flag:
         folded = False
 
         while True:
+            folded = False
             actor_idx = self.state.active_players[self.state.curr_actor]
             actor = self.state.players[actor_idx]
             total_bet = self.state.player_bets[actor_idx]
@@ -99,25 +106,29 @@ class Game:
 
             # Folding
             if action.action_type == ActionType.FOLD:
-                # remove the actor from active players & advance
                 self.state.active_players.pop(self.state.curr_actor)
                 folded = True
+                if len(self.state.active_players) <= 1:
+                    break
 
             # Checking
             elif action.action_type == ActionType.CHECK:
                 if self.state.current_bet > 0:
                     raise IllegalActionError("Cannot check when there is a bet to call")
-                # Literally do nothing, just advance
 
             # Calling
             elif action.action_type == ActionType.CALL:
-                if total_bet + action.amount < self.state.current_bet:
-                    raise IllegalActionError(f"Must put in at least {self.state.current_bet - total_bet} to call")
+                still_needed = self.state.current_bet - total_bet
+                if action.amount < still_needed and action.amount < actor.balance:
+                    raise IllegalActionError(f"Must put in at least {still_needed} to call")
                 if action.amount > actor.balance:
-                    raise IllegalActionError(f"Cannot bet more than your current balance")
-                # Subtract action.amount from balance, update player_bets, and advance
+                    raise IllegalActionError("Cannot bet more than your current balance")
                 actor.balance -= action.amount
                 self.state.player_bets[actor_idx] += action.amount
+                self.state.pots[-1].amount += action.amount
+                if actor.balance == 0:
+                    self._handle_all_in(actor_idx, self.state.player_bets[actor_idx])
+                    folded = True  # treat as removed from active players
 
             # Raising
             elif action.action_type == ActionType.RAISE:
@@ -125,22 +136,31 @@ class Game:
                 if increment < self.state.last_raise_amount:
                     raise IllegalActionError(f"Minimum raise increment is {self.state.last_raise_amount}")
                 if action.amount > actor.balance:
-                    raise IllegalActionError(f"Cannot bet more than your current balance")
-                # update increment, current_bet, last_aggressor, player_bets, and player balance
+                    raise IllegalActionError("Cannot bet more than your current balance")
                 self.state.last_raise_amount = increment
                 self.state.current_bet = total_bet + action.amount
                 last_aggressor = actor_idx
                 actor.balance -= action.amount
                 self.state.player_bets[actor_idx] += action.amount
+                self.state.pots[-1].amount += action.amount
+                if actor.balance == 0:
+                    self._handle_all_in(actor_idx, self.state.player_bets[actor_idx])
+                    folded = True  # treat as removed from active players
 
             # Advance to the next player
             if not folded:
                 self.state.curr_actor = (self.state.curr_actor + 1) % len(self.state.active_players)
             else:
-                # if a player has folded, we do not advance the counter, only wrap around if needed.
                 self.state.curr_actor %= len(self.state.active_players)
 
-            # Stop when we've come back around to the last aggressor
+            if len(self.state.active_players) <= 1:
+                break
+
+            # update last_aggressor if they were removed from active players
+            if last_aggressor not in self.state.active_players:
+                last_aggressor = self.state.active_players[self.state.curr_actor]
+
+            # stop when we've come back around to the last aggressor
             if self.state.active_players[self.state.curr_actor] == last_aggressor:
                 break
 
@@ -181,36 +201,88 @@ class Game:
     def _post_blinds(self) -> None:
         """
         Mutate GameState to process the small and big blind logic.
-
-        NOTE: This does not currently account for side pots and all-ins at the blind.
-        This will be added later. For now the blind is simply capped by the person's balance.
-        Other players are still required to pay at least big_blind to enter.
+        If a player cannot cover the blind, they go all-in and a side pot is created.
         """
-
-        # Compute player indices for the blind holders
         small_blind_idx = (self.dealer + 1) % len(self.players)
         big_blind_idx = (self.dealer + 2) % len(self.players)
 
-        # Deduct corresponding amount from players' balances
         small_blind_amount = min(self.state.small_blind, self.state.players[small_blind_idx].balance)
         big_blind_amount = min(self.state.big_blind, self.state.players[big_blind_idx].balance)
 
+        # deduct from balances
         self.state.players[small_blind_idx].balance -= small_blind_amount
         self.state.players[big_blind_idx].balance -= big_blind_amount
 
-        # Append both bets to the pot
-        self.state.pot += (self.state.small_blind + self.state.big_blind)
+        # add to main pot
+        self.state.pots[0].amount += small_blind_amount + big_blind_amount
 
-        # Update state.player_bets
-        self.state.player_bets[small_blind_idx] = self.state.small_blind
-        self.state.player_bets[big_blind_idx] = self.state.big_blind
+        # update player_bets
+        self.state.player_bets[small_blind_idx] = small_blind_amount
+        self.state.player_bets[big_blind_idx] = big_blind_amount
 
-        # Set the current bet to big_blind
+        # set current bet
         self.state.current_bet = self.state.big_blind
 
+        # handle all-in blind cases
+        if small_blind_amount < self.state.small_blind:
+            self._handle_all_in(small_blind_idx, small_blind_amount)
+        if big_blind_amount < self.state.big_blind:
+            self._handle_all_in(big_blind_idx, big_blind_amount)
+
+    def _handle_all_in(self, all_in_idx: int, all_in_amount: float) -> None:
+        """
+        Split pots when a player goes all-in.
+        The all-in player can only win up to all_in_amount from each other player.
+        Excess contributions go into a new side pot that the all-in player is not eligible for.
+        """
+        # cap the main pot contribution per player to the all-in amount
+        # any excess already contributed by others goes into a side pot
+        excess = 0.0
+        for i in self.state.active_players:
+            if i == all_in_idx:
+                continue
+            overpaid = max(0.0, self.state.player_bets[i] - all_in_amount)
+            if overpaid > 0:
+                self.state.pots[0].amount -= overpaid
+                excess += overpaid
+
+        if excess > 0:
+            # create a new side pot with all players except the all-in player
+            side_eligible = [i for i in self.state.active_players if i != all_in_idx]
+            self.state.pots.append(Pot(amount=excess, eligible=side_eligible))
+
+        # remove all-in player from eligibility of any future side pots
+        # they remain eligible for the main pot only
+        self.state.pots[0].eligible = [i for i in self.state.pots[0].eligible if
+                                       i == all_in_idx or i in self.state.active_players]
+
+        # remove all-in player from active_players so they can't act further
+        if all_in_idx in self.state.active_players:
+            self.state.active_players.remove(all_in_idx)
 
     def _showdown(self) -> None:
-        pass
+        for pot in self.state.pots:
+            if not pot.eligible:
+                continue
+            # evaluate best hand for each eligible player
+            hands = {
+                i: best_hand(self.state.players[i], self.state)
+                for i in pot.eligible
+            }
+            # find the best hand
+            best_idx = pot.eligible[0]
+            for i in pot.eligible[1:]:
+                if compare_hands(hands[i], hands[best_idx]) == 1:
+                    best_idx = i
+            # collect winners (handle ties)
+            winners = [
+                i for i in pot.eligible
+                if compare_hands(hands[i], hands[best_idx]) == 0
+            ]
+            # split pot among winners
+            share = pot.amount / len(winners)
+            for i in winners:
+                self.state.players[i].balance += share
 
     def _active_players(self) -> list[Player]:
         """

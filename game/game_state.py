@@ -1,8 +1,28 @@
 """The game state module. Defines what happens at each turn."""
-from player import Player, TestPlayer
-from deck import Deck
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from enum import Enum
+from dataclasses import dataclass, field
+if TYPE_CHECKING:
+    from player import Player
+from game.deck import Deck
 
+@dataclass
+class Pot:
+    """
+    Represents a single pot in a poker hand
+    
+    Instance Attributes:
+        - amount: the total monetary value of this pot
+        - eligible: the player indices (into players[]) who can win this pot
+    
+    Representation Invariants:
+        - self.amount >= 0.0
+        - len(self.eligible) >= 1
+    """
+    amount: float
+    eligible: list[int] = field(default_factory=list)
+        
 class Street(Enum):
     PREFLOP = 0
     FLOP = 1
@@ -21,7 +41,7 @@ class GameState:
         - curr_dealer: index into players[] for the dealer seat.
         - curr_actor: index into active_players[] for whose turn it is.
         - street: the current betting round.
-        - pot: total amount of money in the pot.
+        - pots: A list of all active pots.
         - current_bet: the highest bet placed this street (the amount to call).
         - last_raise_amount: the size of the latest raise increment
         - player_bets: maps player index -> amount they've bet this street.
@@ -44,7 +64,7 @@ class GameState:
     curr_dealer: int
     curr_actor: int
     street: Street
-    pot: float
+    pots: list[Pot]
     current_bet: float
     last_raise_amount: float
     player_bets: dict[int, float]
@@ -66,7 +86,7 @@ class GameState:
         self.active_players = list(range(len(players)))
         self.curr_dealer = curr_dealer
         self.street = Street.PREFLOP
-        self.pot = 0.0
+        self.pots = [Pot(amount=0.0, eligible=list(range(len(players))))]
         self.current_bet = 0.0
         self.last_raise_amount = big_blind
         self.player_bets = {i: 0.0 for i in range(len(players))}
@@ -80,6 +100,11 @@ class GameState:
             self.curr_actor = curr_dealer
         else:
             self.curr_actor = (curr_dealer + 3) % len(players)
+
+    @property
+    def pot(self) -> float:
+        """Return the total amount across all pots."""
+        return sum(p.amount for p in self.pots)
 
     def get_current_actor(self) -> Player:
         """Return the Player object whose turn it is to act."""

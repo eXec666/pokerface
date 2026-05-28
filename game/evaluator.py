@@ -2,13 +2,11 @@
 Player subclasses are welcome to implement their own evaluators.
 This module is used by the game engine to simply compute the best card on the table and assign winners at showdown.
 """
-
-
 from enum import Enum
 from collections import Counter
 from typing import Optional
-from deck import Deck, _poker_value
-from game_state import GameState
+from game.deck import Deck, _poker_value
+from game.game_state import GameState
 from player import Player
 
 class Combination(Enum):
@@ -36,7 +34,7 @@ def _find_straight(cards: list[tuple[int, int]]) -> Optional[list[tuple[int, int
     Return the best 5-card straight from a given list of cards, or None if no straight exists.
     Handles the ace-low (A, 2, 3, 4, 5) and ace-high (10, J, Q, K, A) cases.
     """
-    unique_denoms = sorted(set(card[0] for card in cards), key=_poker_value)
+    unique_denoms = sorted(set(card[0] for card in cards))
 
     if 1 in unique_denoms:
         unique_denoms.append(14)
@@ -241,6 +239,52 @@ def has_royal_flush(player: Player, state: GameState) -> Optional[list[tuple[int
     return None
 
 
+def best_hand(player: Player, state: GameState) -> tuple[Combination, list[tuple[int, int]]]:
+    """
+    Return the best combination and corresponding 5-card hand for the player.
+    """
+    checks = [
+        (Combination.ROYAL_FLUSH, has_royal_flush),
+        (Combination.STRAIGHT_FLUSH, has_straight_flush),
+        (Combination.QUAD, has_quad),
+        (Combination.FULL_HOUSE, has_full_house),
+        (Combination.FLUSH, has_flush),
+        (Combination.STRAIGHT, has_straight),
+        (Combination.TRIPLE, has_triple),
+        (Combination.TWO_PAIR, has_two_pair),
+        (Combination.PAIR, has_pair),
+        (Combination.HIGH_CARD, has_high_card),
+    ]
+    for combination, fn in checks:
+        result = fn(player, state)
+        if result is not None:
+            return (combination, result)
+
+    # fallback: table dominates, return the 5 best cards anyway
+    fallback = sorted(player.hand + state.table, key=lambda c: _poker_value(c[0]))[-5:]
+    return (Combination.HIGH_CARD, fallback)
 
 
+def compare_hands(
+    h1: tuple[Combination, list[tuple[int, int]]],
+    h2: tuple[Combination, list[tuple[int, int]]]
+) -> int:
+    """
+    Compare two hands. Returns 1 if h1 wins, -1 if h2 wins, 0 if tie.
+    """
+    c1, cards1 = h1
+    c2, cards2 = h2
 
+    # higher combination wins outright
+    if c1.value != c2.value:
+        return 1 if c1.value > c2.value else -1
+
+    # same combination - compare card values from highest to lowest
+    vals1 = sorted([_poker_value(c[0]) for c in cards1], reverse=True)
+    vals2 = sorted([_poker_value(c[0]) for c in cards2], reverse=True)
+
+    for v1, v2 in zip(vals1, vals2):
+        if v1 != v2:
+            return 1 if v1 > v2 else -1
+
+    return 0  # tie
