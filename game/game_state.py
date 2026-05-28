@@ -19,6 +19,7 @@ class GameState:
         - street: the current betting round.
         - pot: total amount of money in the pot.
         - current_bet: the highest bet placed this street (the amount to call).
+        - last_raise_amount: the size of the latest raise increment
         - player_bets: maps player index -> amount they've bet this street.
         - deck: the deck for this hand.
         - table: community cards dealt so far (0–5).
@@ -41,6 +42,7 @@ class GameState:
     street: Street
     pot: float
     current_bet: float
+    last_raise_amount: float
     player_bets: dict[int, float]
     deck: Deck
     table: list[tuple[int, int]]
@@ -62,6 +64,7 @@ class GameState:
         self.street = Street.PREFLOP
         self.pot = 0.0
         self.current_bet = 0.0
+        self.last_raise_amount = big_blind
         self.player_bets = {i: 0.0 for i in range(len(players))}
         self.deck = Deck()
         self.table = []
@@ -73,4 +76,7 @@ class GameState:
             self.curr_actor = curr_dealer
         else:
             self.curr_actor = (curr_dealer + 3) % len(players)
-        return
+
+    def get_current_actor(self) -> Player:
+        """Return the Player object whose turn it is to act."""
+        return self.players[self.active_players[self.curr_actor]]

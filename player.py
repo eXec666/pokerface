@@ -2,6 +2,28 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 import random
+from dataclasses import dataclass
+from enum import Enum
+
+from game.game_state import GameState
+
+
+class ActionType(Enum):
+    FOLD = "fold"
+    CHECK = "check"
+    CALL = "call"
+    RAISE = "raise"
+
+@dataclass
+class Action:
+    """
+    A player action in a poker game.
+    Instance Attributes:
+        - action_type: one of FOLD, CHECK, CALL, or RAISE.
+        - amount: the associated betting amount (only relevant for CALL & RAISE actions)
+    """
+    action_type: ActionType
+    amount: float = 0.0
 
 class Player(ABC):
     """
@@ -24,25 +46,18 @@ class Player(ABC):
         return
 
     @abstractmethod
-    def bet(self) -> float:
-        """Bid some amount of money in this current round."""
+    def get_action(self, state: GameState) -> Action:
+        """Given the current game state, return the player's action"""
         ...
 
-    def fold(self) -> None:
-        """Fold in this round"""
-        return
-
-    def check(self) -> None:
-        """Check in this round"""
-        return
 
 class TestPlayer(Player):
-    """Temporary subclass for testing. Bets a random amount between 0 and self."""
+    """Temporary subclass for testing. Always folds"""
     def __init__(self, balance: float) -> None:
         super().__init__(balance)
 
-    def bet(self) -> float:
-        """Return a random number between 0 and self.balance inclusive"""
-        return random.uniform(0, self.balance)
+    def get_action(self, state: GameState) -> Action:
+        return Action(ActionType.FOLD)
+
 
 

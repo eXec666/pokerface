@@ -63,12 +63,15 @@ class Deck:
 
         return self._cards.pop()
 
-    def reshuffle(self) -> None:
+    def reshuffle(self, n: int = 1) -> None:
         """
-        Reshuffle the deck in place.
+        Reshuffle the deck in place n consecutive times.
         Raise ValueError if the deck is empty.
+        Raise ValueError if n < 1.
         """
         if self.is_empty():
             raise ValueError("This deck is empty: No cards to reshuffle")
-
-        random.shuffle(self._cards)
+        elif n < 1:
+            raise ValueError("The deck must be shuffled at least once.")
+        for i in range(n):
+            random.shuffle(self._cards)
