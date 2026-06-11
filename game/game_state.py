@@ -50,8 +50,8 @@ class GameState:
         - player_bets: maps player index -> amount they've bet this street.
         - deck: the deck for this hand.
         - table: community cards dealt so far (0–5).
-        - small_blind: small blind amount.
-        - big_blind: big blind amount.
+        - small_blind: small blind amount. (in cents)
+        - big_blind: big blind amount. (in cents)
 
     Representation Invariants:
         - len(self.players) >= 2
@@ -68,15 +68,15 @@ class GameState:
     curr_actor: int
     street: Street
     pots: list[Pot]
-    current_bet: float
-    last_raise_amount: float
-    player_bets: dict[int, float]
+    current_bet: int
+    last_raise_amount: int
+    player_bets: dict[int, int]
     deck: Deck
     table: list[tuple[int, int]]
-    small_blind: float
-    big_blind: float
+    small_blind: int
+    big_blind: int
 
-    def __init__(self, players: list[Player], curr_dealer: int, small_blind: float, big_blind: float) -> None:
+    def __init__(self, players: list[Player], curr_dealer: int, small_blind: int, big_blind: int) -> None:
         """
         Initialize this game state.
         For a fresh hand:
@@ -90,9 +90,9 @@ class GameState:
         self.curr_dealer = curr_dealer
         self.street = Street.PREFLOP
         self.pots = [Pot(amount=0, eligible=list(range(len(players))))]
-        self.current_bet = 0.0
+        self.current_bet = 0
         self.last_raise_amount = big_blind
-        self.player_bets = {i: 0.0 for i in range(len(players))}
+        self.player_bets = {i: 0 for i in range(len(players))}
         self.deck = Deck()
         self.table = []
         self.small_blind = small_blind

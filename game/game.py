@@ -75,6 +75,12 @@ class Game:
             self._play_hand()
             self.dealer = (self.dealer + 1) % len(self.players)
 
+    def _reset_street(self) -> None:
+        """Reset betting state for a new street."""
+        self.state.current_bet = 0
+        self.state.last_raise_amount = self.state.big_blind
+        self.state.player_bets = {i: 0 for i in range(len(self.state.players))}
+
     def _play_hand(self) -> None:
         """
         #TODO: Docstring
@@ -108,6 +114,7 @@ class Game:
             self._showdown()
             return
 
+        self._reset_street()
         self._deal_community_cards(3, Street.FLOP)
         self.state.street = Street.FLOP
         self._betting_round()
@@ -115,6 +122,7 @@ class Game:
             self._showdown()
             return
 
+        self._reset_street()
         self._deal_community_cards(1, Street.TURN)
         self.state.street = Street.TURN
         self._betting_round()
@@ -122,6 +130,7 @@ class Game:
             self._showdown()
             return
 
+        self._reset_street()
         self._deal_community_cards(1, Street.RIVER)
         self.state.street = Street.RIVER
         self._betting_round()
@@ -149,7 +158,6 @@ class Game:
 
         # track the last player who raised
         last_aggressor = self.state.active_players[self.state.curr_actor]
-        folded = False
 
         while True:
             folded = False
@@ -331,6 +339,7 @@ class Game:
             self.state.active_players.remove(all_in_idx)
 
     def _showdown(self) -> None:
+        logger.info(f"Showdown Initiated.")
         for pot in self.state.pots:
             if not pot.eligible:
                 continue
@@ -339,6 +348,8 @@ class Game:
                 i: best_hand(self.state.players[i], self.state)
                 for i in pot.eligible
             }
+            for player in hands:
+                logger.info(f"Player {player}'s best hand: {hands[player]}")
             # find the best hand
             best_idx = pot.eligible[0]
             for i in pot.eligible[1:]:
@@ -349,11 +360,13 @@ class Game:
                 i for i in pot.eligible
                 if compare_hands(hands[i], hands[best_idx]) == 0
             ]
+            logger.info(f"Player(s) {winners} won this hand")
             share = pot.amount // len(winners)
             remainder = pot.amount % len(winners)
             for i, winner_idx in enumerate(winners):
                 bonus = 1 if i < remainder else 0
                 self.state.players[winner_idx].balance += share + bonus
+            logger.info(f"New player balances: {[player.balance for player in self.players]}")
 
     def _active_players(self) -> list[Player]:
         """
@@ -365,7 +378,7 @@ class Game:
         return [p for p in self.players if p.balance > 0]
 
 if __name__ == "__main__":
-    from players.player import TestPlayer
-    players = [TestPlayer() for _ in range(3)]
+    from players.player import CheckPlayer
+    players = [CheckPlayer() for _ in range(3)]
     game = Game(players, small_blind=1, big_blind=2, buy_in=100)
     game.run()
