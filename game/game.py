@@ -1,6 +1,8 @@
 """#TODO: Module Description"""
 from typing import Optional
 import logging
+
+from players.human_player import HumanPlayer
 from players.player import Player, ActionType
 from game.game_state import GameState, Pot, Street
 from game.evaluator import best_hand, compare_hands
@@ -243,9 +245,9 @@ class Game:
 
             # Checking
             elif action.action_type == ActionType.CHECK:
-                if self.state.current_bet > 0:
+                still_needed = self.state.current_bet - total_bet  # total_bet = player's current bet this street
+                if still_needed > 0:
                     raise IllegalActionError("Cannot check when there is a bet to call")
-
             # Calling
             elif action.action_type == ActionType.CALL:
                 still_needed = self.state.current_bet - total_bet
@@ -503,6 +505,6 @@ class Game:
 
 if __name__ == "__main__":
     from players.player import CheckPlayer
-    players = [CheckPlayer() for _ in range(3)]
+    players = [CheckPlayer(), CheckPlayer(), HumanPlayer()]
     game = Game(players, small_blind=1, big_blind=2, buy_in=100)
     game.run()
