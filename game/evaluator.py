@@ -145,21 +145,21 @@ def has_straight(player: Player, state: GameState) -> Optional[list[tuple[int, i
 
 
 def has_flush(player: Player, state: GameState) -> Optional[list[tuple[int, int]]]:
-    """
-    Return the best 5-card combination for player containing Combination.FLUSH.
-    Return None if no such combination exists.
-    """
     counts = _get_counter(player, state, 1)
     all_cards = player.hand + state.table
     flush_suites = [s for s, v in counts.items() if v >= 5]
     if not flush_suites:
         return None
-    else:
-        eligible_cards = sorted(
-            (card for card in all_cards if card[1] in flush_suites),
-             key=lambda c: _poker_value(c[0])
-        )
-        return eligible_cards[-5:]
+
+    best_flush = None
+    for suit in flush_suites:
+        suited_cards = [c for c in all_cards if c[1] == suit]
+        # Take the five highest cards of this suit
+        suited_cards_sorted = sorted(suited_cards, key=lambda c: _poker_value(c[0]))
+        current_flush = suited_cards_sorted[-5:]
+        if best_flush is None or _poker_value(current_flush[-1][0]) > _poker_value(best_flush[-1][0]):
+            best_flush = current_flush
+    return best_flush
 
 
 def has_full_house(player: Player, state: GameState) -> Optional[list[tuple[int, int]]]:
@@ -243,6 +243,8 @@ def best_hand(player: Player, state: GameState) -> tuple[Combination, list[tuple
     """
     Return the best combination and corresponding 5-card hand for the player.
     """
+    if player.hand is None:
+        return (Combination.HIGH_CARD, [])
     checks = [
         (Combination.ROYAL_FLUSH, has_royal_flush),
         (Combination.STRAIGHT_FLUSH, has_straight_flush),

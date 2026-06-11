@@ -81,6 +81,42 @@ class Game:
         self.state.last_raise_amount = self.state.big_blind
         self.state.player_bets = {i: 0 for i in range(len(self.state.players))}
 
+    def _add_to_pot(self, player_idx: int, amount: int) -> None:
+        """Add amount to the highest eligible pot for the player."""
+        for pot in reversed(self.state.pots):
+            if player_idx in pot.eligible:
+                pot.amount += amount
+                return
+        # Should never happen: player is always eligible for at least the main pot
+        self.state.pots[0].amount += amount
+
+    def _log_pots(self) -> None:
+        pots_str = " | ".join(
+            f"Pot {idx}: {p.amount / 100:.2f} (eligible {p.eligible})" for idx, p in enumerate(self.state.pots))
+        logger.info(f"Pots: {pots_str}")
+
+    def _set_first_actor(self) -> None:
+        n = len(self.state.active_players)
+        dealer_idx = self.state.curr_dealer
+        # Find dealer position in active_players
+        try:
+            dealer_pos = self.state.active_players.index(dealer_idx)
+        except ValueError:
+            # dealer not active – start from first active player
+            self.state.curr_actor = 0
+            return
+
+        if self.state.street == Street.PREFLOP:
+            if n == 2:
+                # heads-up: small blind acts first (dealer+1)
+                self.state.curr_actor = (dealer_pos + 1) % n
+            else:
+                # multi-way: UTG = dealer+3
+                self.state.curr_actor = (dealer_pos + 3) % n
+        else:
+            # post-flop: first active player to the left of the button
+            self.state.curr_actor = (dealer_pos + 1) % n
+
     def _play_hand(self) -> None:
         """
         #TODO: Docstring
@@ -92,16 +128,24 @@ class Game:
         # remove players with no balance from the hand
         self.state.active_players = [i for i in self.state.active_players
                                      if self.state.players[i].balance > 0]
+        for pot in self.state.pots:
+            pot.eligible = [i for i in pot.eligible if i in self.state.active_players]
 
         n = len(self.state.active_players)
         dealer_pos = self.state.active_players.index(self.dealer) if self.dealer in self.state.active_players else 0
 
         if n == 2:
-            self.state.curr_actor = dealer_pos
+            # Heads-up: preflop small blind acts first; postflop button (dealer) acts first
+            if self.state.street == Street.PREFLOP:
+                # Small blind is dealer+1
+                sb_index_in_active = (dealer_pos + 1) % n
+                self.state.curr_actor = sb_index_in_active
+            else:
+                # On flop and later, button (dealer) acts first
+                self.state.curr_actor = dealer_pos
         else:
+            # Multi-way: under the gun is dealer+3 (for preflop)
             self.state.curr_actor = (dealer_pos + 3) % n
-
-        self.state.curr_actor %= n  # safety wrap
 
         logger.info(f"Received game state | "
                     f"Dealer: Player {self.dealer} | "
@@ -109,6 +153,10 @@ class Game:
 
         self._post_blinds()
         self._deal_hole_cards()
+        self._set_first_actor()
+        logger.info(f"--- {self.state.street} --- Active players: {self.state.active_players} | "
+                    f"Current bet: {self.state.current_bet / 100:.2f} | Pot total: {self.state.pot / 100:.2f}")
+        self._log_pots()
         self._betting_round() #Preflop
         if len(self.state.active_players) <= 1:
             self._showdown()
@@ -117,6 +165,10 @@ class Game:
         self._reset_street()
         self._deal_community_cards(3, Street.FLOP)
         self.state.street = Street.FLOP
+        self._set_first_actor()
+        logger.info(f"--- {self.state.street} --- Active players: {self.state.active_players} | "
+                    f"Current bet: {self.state.current_bet / 100:.2f} | Pot total: {self.state.pot / 100:.2f}")
+        self._log_pots()
         self._betting_round()
         if len(self.state.active_players) <= 1:
             self._showdown()
@@ -125,6 +177,10 @@ class Game:
         self._reset_street()
         self._deal_community_cards(1, Street.TURN)
         self.state.street = Street.TURN
+        self._set_first_actor()
+        logger.info(f"--- {self.state.street} --- Active players: {self.state.active_players} | "
+                    f"Current bet: {self.state.current_bet / 100:.2f} | Pot total: {self.state.pot / 100:.2f}")
+        self._log_pots()
         self._betting_round()
         if len(self.state.active_players) <= 1:
             self._showdown()
@@ -133,6 +189,10 @@ class Game:
         self._reset_street()
         self._deal_community_cards(1, Street.RIVER)
         self.state.street = Street.RIVER
+        self._set_first_actor()
+        logger.info(f"--- {self.state.street} --- Active players: {self.state.active_players} | "
+                    f"Current bet: {self.state.current_bet / 100:.2f} | Pot total: {self.state.pot / 100:.2f}")
+        self._log_pots()
         self._betting_round()
         self._showdown()
 
@@ -165,12 +225,18 @@ class Game:
             actor = self.state.players[actor_idx]
             total_bet = self.state.player_bets[actor_idx]
             action = actor.get_action(self.state)
-            logger.info(f"Player {actor_idx} response: {action}")
+            logger.info(f"Player {actor_idx} {action.action_type.value} "
+                        f"{action.amount / 100:.2f} | stack: {actor.balance / 100:.2f} | "
+                        f"total bet this street: {self.state.player_bets[actor_idx] / 100:.2f}")
 
             # Folding
             if action.action_type == ActionType.FOLD:
                 self.state.active_players.pop(self.state.curr_actor)
-                logger.info(f"Player {actor_idx} removed from active_players")
+                # Remove player from all pots' eligible lists
+                for pot in self.state.pots:
+                    if actor_idx in pot.eligible:
+                        pot.eligible.remove(actor_idx)
+                logger.info(f"Player {actor_idx} removed from active_players and pots")
                 folded = True
                 if len(self.state.active_players) <= 1:
                     break
@@ -189,7 +255,8 @@ class Game:
                     raise IllegalActionError("Cannot bet more than your current balance")
                 actor.balance -= action.amount
                 self.state.player_bets[actor_idx] += action.amount
-                self.state.pots[-1].amount += action.amount
+                self._add_to_pot(actor_idx, action.amount)
+                self._log_pots()
                 if actor.balance == 0:
                     self._handle_all_in(actor_idx, self.state.player_bets[actor_idx])
                     folded = True  # treat as removed from active players
@@ -197,16 +264,23 @@ class Game:
             # Raising
             elif action.action_type == ActionType.RAISE:
                 increment = (total_bet + action.amount) - self.state.current_bet
-                if increment < self.state.last_raise_amount:
+                # All-in is always allowed
+                if action.amount < actor.balance and increment < self.state.last_raise_amount:
                     raise IllegalActionError(f"Minimum raise increment is {self.state.last_raise_amount}")
                 if action.amount > actor.balance:
                     raise IllegalActionError("Cannot bet more than your current balance")
-                self.state.last_raise_amount = increment
+                # Only update last_raise_amount if this is a full raise (not all-in short)
+                if action.amount == actor.balance and increment < self.state.last_raise_amount:
+                    # This is a short all-in, do not change the last raise amount
+                    pass
+                else:
+                    self.state.last_raise_amount = increment
                 self.state.current_bet = total_bet + action.amount
                 last_aggressor = actor_idx
                 actor.balance -= action.amount
                 self.state.player_bets[actor_idx] += action.amount
-                self.state.pots[-1].amount += action.amount
+                self._add_to_pot(actor_idx, action.amount)
+                self._log_pots()
                 if actor.balance == 0:
                     self._handle_all_in(actor_idx, self.state.player_bets[actor_idx])
                     folded = True  # treat as removed from active players
@@ -235,8 +309,11 @@ class Game:
         Cards are distributed in playing order, starting from index = dealer + 1.
         Cards are given out one at a time, i.e the process takes two cycles.
         """
+        active_set = set(self.state.active_players)
         start = (self.dealer + 1) % len(self.state.players)
+        # Build order of all players, but only deal to active ones
         order = list(range(start, len(self.state.players))) + list(range(0, start))
+        order = [i for i in order if i in active_set]  # keep only active players
 
         # Deal first cards
         first_cards = {}
@@ -246,10 +323,19 @@ class Game:
         # Deal second cards and assign hands
         for i in order:
             self.state.players[i].hand = [first_cards[i], self.state.deck.draw()]
+        logger.info(f"Dealt hole cards to {len(order)} active players.")
+        for i in order:
+            c1, c2 = self.state.players[i].hand
+            # Convert card tuples to readable format, e.g., (1,1) -> "Ace of clubs"
+            suit_map = {1: "♣", 2: "♦", 3: "♥", 4: "♠"}
+            rank_map = {1: "A", 11: "J", 12: "Q", 13: "K"}
 
-        logger.info(f"Dealt Player Cards to {len(self.state.players)} players.")
+            def card_str(card):
+                rank = rank_map.get(card[0], str(card[0]))
+                suit = suit_map[card[1]]
+                return f"{rank}{suit}"
 
-        return
+            logger.info(f"  Player {i} cards: {card_str(c1)} {card_str(c2)}")
 
     def _deal_community_cards(self, n: int, street: Street) -> None:
         """
@@ -274,6 +360,11 @@ class Game:
         small_blind_idx = (self.dealer + 1) % len(self.players)
         big_blind_idx = (self.dealer + 2) % len(self.players)
 
+        # Guard: ensure both blind players are still active (should be true, but be safe)
+        if small_blind_idx not in self.state.active_players or big_blind_idx not in self.state.active_players:
+            logger.warning("Blind player not active – cannot post blinds. Hand aborted.")
+            return
+
         small_blind_amount = min(self.state.small_blind, self.state.players[small_blind_idx].balance)
         big_blind_amount = min(self.state.big_blind, self.state.players[big_blind_idx].balance)
 
@@ -282,7 +373,8 @@ class Game:
         self.state.players[big_blind_idx].balance -= big_blind_amount
 
         # add to main pot
-        self.state.pots[0].amount += small_blind_amount + big_blind_amount
+        self._add_to_pot(small_blind_idx, small_blind_amount)
+        self._add_to_pot(big_blind_idx, big_blind_amount)
 
         # update player_bets
         self.state.player_bets[small_blind_idx] = small_blind_amount
@@ -297,6 +389,7 @@ class Game:
         if big_blind_amount < self.state.big_blind:
             self._handle_all_in(big_blind_idx, big_blind_amount)
 
+        self._log_pots()
         non_empty_pots = [p for p in self.state.pots if p.amount > 0]
         logger.info(f"Blinds posted | "
                     f"Player {small_blind_idx} paid: {small_blind_amount / 100:.2f} | "
@@ -313,60 +406,91 @@ class Game:
         The all-in player can only win up to all_in_amount from each other player.
         Excess contributions go into a new side pot that the all-in player is not eligible for.
         """
-        # cap the main pot contribution per player to the all-in amount
-        # any excess already contributed by others goes into a side pot
-        excess = 0.0
-        for i in self.state.active_players:
-            if i == all_in_idx:
+        # all_in_amount is the total amount this player has contributed this street (including current bet)
+        # We need to split each existing pot that this player is eligible for.
+        new_pots = []
+        for pot in self.state.pots:
+            if all_in_idx not in pot.eligible:
+                new_pots.append(pot)
                 continue
-            overpaid = max(0.0, self.state.player_bets[i] - all_in_amount)
-            if overpaid > 0:
-                self.state.pots[0].amount -= overpaid
-                excess += overpaid
-
-        if excess > 0:
-            # create a new side pot with all players except the all-in player
-            side_eligible = [i for i in self.state.active_players if i != all_in_idx]
-            self.state.pots.append(Pot(amount=excess, eligible=side_eligible))
-
-        # remove all-in player from eligibility of any future side pots
-        # they remain eligible for the main pot only
-        self.state.pots[0].eligible = [i for i in self.state.pots[0].eligible if
-                                       i == all_in_idx or i in self.state.active_players]
-
-        # remove all-in player from active_players so they can't act further
+            # This pot will be split into a "main" portion (capped at all_in_amount per player)
+            # and a "side" portion (excess above all_in_amount from others)
+            main_amount = 0
+            side_amount = 0
+            main_eligible = [all_in_idx]
+            side_eligible = []
+            for i in pot.eligible:
+                bet_i = self.state.player_bets[i]
+                if i == all_in_idx:
+                    main_amount += bet_i
+                else:
+                    if bet_i <= all_in_amount:
+                        main_amount += bet_i
+                        main_eligible.append(i)
+                    else:
+                        main_amount += all_in_amount
+                        side_amount += (bet_i - all_in_amount)
+                        side_eligible.append(i)
+            # Add main pot
+            if main_amount > 0:
+                new_pots.append(Pot(amount=main_amount, eligible=main_eligible))
+            # Add side pot
+            if side_amount > 0:
+                # Side pot is contested only by those who bet more than all_in_amount
+                new_pots.append(Pot(amount=side_amount, eligible=side_eligible))
+        # Replace pots
+        self.state.pots = new_pots
+        self._log_pots()
+        # Remove all-in player from active_players
         if all_in_idx in self.state.active_players:
             self.state.active_players.remove(all_in_idx)
 
     def _showdown(self) -> None:
-        logger.info(f"Showdown Initiated.")
+        logger.info("Showdown Initiated.")
         for pot in self.state.pots:
             if not pot.eligible:
                 continue
-            # evaluate best hand for each eligible player
+            # Filter out players who have no hand (folded or not dealt)
+            eligible_with_hand = [
+                i for i in pot.eligible
+                if self.state.players[i].hand is not None
+            ]
+            if not eligible_with_hand:
+                continue  # no one can win this pot (should not happen)
+
+            # Evaluate best hand for each eligible player
             hands = {
                 i: best_hand(self.state.players[i], self.state)
-                for i in pot.eligible
+                for i in eligible_with_hand
             }
-            for player in hands:
-                logger.info(f"Player {player}'s best hand: {hands[player]}")
-            # find the best hand
-            best_idx = pot.eligible[0]
-            for i in pot.eligible[1:]:
+            for player, hand in hands.items():
+                logger.info(f"Player {player}'s best hand: {hand}")
+
+            # Find the best hand among eligible_with_hand
+            best_idx = eligible_with_hand[0]
+            for i in eligible_with_hand[1:]:
                 if compare_hands(hands[i], hands[best_idx]) == 1:
                     best_idx = i
-            # collect winners (handle ties)
+
+            # Collect winners (handle ties)
             winners = [
-                i for i in pot.eligible
+                i for i in eligible_with_hand
                 if compare_hands(hands[i], hands[best_idx]) == 0
             ]
-            logger.info(f"Player(s) {winners} won this hand")
+            logger.info(f"Player(s) {winners} won this pot (amount: {pot.amount / 100:.2f})")
+
+            # Split the pot among winners
             share = pot.amount // len(winners)
             remainder = pot.amount % len(winners)
-            for i, winner_idx in enumerate(winners):
-                bonus = 1 if i < remainder else 0
+            for idx, winner_idx in enumerate(winners):
+                bonus = 1 if idx < remainder else 0
                 self.state.players[winner_idx].balance += share + bonus
-            logger.info(f"New player balances: {[player.balance for player in self.players]}")
+
+        # After all pots have been awarded, log final balances and hand separator
+        logger.info(f"New player balances: {[p.balance / 100 for p in self.players]}")
+        logger.info("-" * 50)
+        logger.info("Hand finished.")
+        logger.info("=" * 50)
 
     def _active_players(self) -> list[Player]:
         """
