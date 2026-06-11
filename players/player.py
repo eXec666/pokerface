@@ -1,10 +1,10 @@
 """Module that defines the Player Base Class."""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from abc import ABC, abstractmethod
-from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
+from game.game_state import Street
 
 if TYPE_CHECKING:
     from game.game_state import GameState
@@ -58,13 +58,29 @@ class Player(ABC):
         ...
 
 
-class TestPlayer(Player):
-    """Temporary subclass for testing. Always folds"""
+class CheckPlayer(Player):
+    """Player Subclass used for testing. Always checks"""
     def __init__(self) -> None:
         super().__init__()
 
     def get_action(self, state: GameState) -> Action:
-        return Action(ActionType.FOLD)
+        """Only plays the blind. If any player raises - fold."""
+        # find this player's index to check balance
+        actor_idx = next(i for i, p in enumerate(state.players) if p is self)
+        still_needed = state.current_bet - state.player_bets[actor_idx]
+        affordable = min(still_needed, self.balance)
 
+        # Call BB on preflop
+        if state.street == Street.PREFLOP and state.current_bet == state.big_blind:
+            return Action(ActionType.CALL, amount=affordable)
+        # Fold if anyone raises preflop
+        elif state.street == Street.PREFLOP:
+            return Action(ActionType.FOLD)
+        # Check on any future streets
+        elif state.current_bet == 0:
+            return Action(ActionType.CHECK)
+        # Fold otherwise
+        else:
+            return Action(ActionType.FOLD)
 
 
