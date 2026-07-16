@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntSupplier;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.Tag;
 
 public class SessionRunnerTest {
@@ -23,6 +25,14 @@ public class SessionRunnerTest {
     private IntSupplier incrementingSeeds() {
         AtomicInteger counter = new AtomicInteger(0);
         return counter::getAndIncrement;
+    }
+
+    /** Fake clock that advances by a fixed increment every time it's read -- lets
+      * tests simulate blind-schedule escalation deterministically without real
+      * time passing. */
+    private LongSupplier advancingClock(long incrementMillisPerCall) {
+        AtomicLong current = new AtomicLong(0);
+        return () -> current.getAndAdd(incrementMillisPerCall);
     }
 
     // -------------------------------------------------------------------------
@@ -54,10 +64,166 @@ public class SessionRunnerTest {
     // -------------------------------------------------------------------------
 
     @Test
-    void blindSchedule_constantReturnsSameLevelRegardlessOfHandsPlayed() {
+    void blindSchedule_constantReturnsSameLevelRegardlessOfElapsedTime() {
         BlindSchedule schedule = BlindSchedule.constant(5, 10);
         assertEquals(new BlindLevel(5, 10), schedule.blindsFor(0));
         assertEquals(new BlindLevel(5, 10), schedule.blindsFor(500));
+    }
+
+    // -------------------------------------------------------------------------
+    // BlindSchedule.increasing -- validation
+    // -------------------------------------------------------------------------
+
+    @Test
+    void increasing_rejectsNullBaseLevel() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BlindSchedule.increasing(null, 0.33, 60_000, 25));
+    }
+
+    @Test
+    void increasing_rejectsZeroPercentage() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BlindSchedule.increasing(new BlindLevel(10, 20), 0.0, 60_000, 25));
+    }
+
+    @Test
+    void increasing_rejectsNegativePercentage() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BlindSchedule.increasing(new BlindLevel(10, 20), -0.1, 60_000, 25));
+    }
+
+    @Test
+    void increasing_rejectsNonPositiveInterval() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BlindSchedule.increasing(new BlindLevel(10, 20), 0.33, 0, 25));
+    }
+
+    @Test
+    void increasing_rejectsNonPositiveChipDenomination() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BlindSchedule.increasing(new BlindLevel(10, 20), 0.33, 60_000, 0));
+    }
+
+    // -------------------------------------------------------------------------
+    // BlindSchedule.increasing -- level computation
+    // -------------------------------------------------------------------------
+
+    @Test
+    void increasing_levelZeroMatchesBaseLevelWhenAlreadyAligned() {
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(300, 600), 0.33, 60_000, 100);
+        assertEquals(new BlindLevel(300, 600), schedule.blindsFor(0));
+    }
+
+    @Test
+    void increasing_justBeforeIntervalStaysAtCurrentLevel() {
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(300, 600), 0.33, 60_000, 100);
+        assertEquals(new BlindLevel(300, 600), schedule.blindsFor(59_999));
+    }
+
+    @Test
+    void increasing_atIntervalBoundaryAdvancesToNextLevel() {
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(300, 600), 0.33, 60_000, 100);
+        // 300*1.33=399 -> nearest 100 is 400; 600*1.33=798 -> nearest 100 is 800.
+        assertEquals(new BlindLevel(400, 800), schedule.blindsFor(60_000));
+    }
+
+    @Test
+    void increasing_compoundsAcrossMultipleLevels() {
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(300, 600), 0.33, 60_000, 100);
+        // level 2: factor=1.33^2=1.7689 -> 300*1.7689=530.67->500, 600*1.7689=1061.34->1100
+        assertEquals(new BlindLevel(500, 1100), schedule.blindsFor(120_000));
+        // level 3: factor=1.33^3=2.352637 -> 300*f=705.79->700, 600*f=1411.58->1400
+        assertEquals(new BlindLevel(700, 1400), schedule.blindsFor(180_000));
+    }
+
+    @Test
+    void increasing_roundsToNearestChipDenomination() {
+        // 10*1.33=13.3 -> nearest 5 is 15; 20*1.33=26.6 -> nearest 5 is 25.
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(10, 20), 0.33, 1000, 5);
+        assertEquals(new BlindLevel(15, 25), schedule.blindsFor(1000));
+    }
+
+    @Test
+    void increasing_bigBlindNeverFallsBelowSmallBlindAcrossManyLevels() {
+        // Rounding-to-nearest is monotonic and the pre-rounding ratio is always
+        // preserved by the shared growth factor, so this invariant should hold
+        // unconditionally -- this sweep is a regression guard against that ever
+        // silently breaking (e.g. from a future rounding-strategy change).
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(10, 20), 0.33, 1000, 25);
+        for (int levelIndex = 0; levelIndex < 50; levelIndex++) {
+            BlindLevel level = schedule.blindsFor((long) levelIndex * 1000);
+            assertTrue(level.bigBlind() >= level.smallBlind(),
+                    "level " + levelIndex + " produced an inverted blind pair: " + level);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SessionRunner -- clock-driven blind escalation integration
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runSession_escalatingBlindScheduleIncreasesBlindsOverTime() {
+        List<Player> players = makePlayers(2, 100_000);
+        List<PokerAgent> agents = List.of(new AlwaysCallAgent(), new AlwaysCallAgent());
+        InMemoryHandLogger logger = new InMemoryHandLogger();
+
+        // Advances 1ms every time the clock is read -- guarantees the schedule has
+        // moved to level 1 by the second hand, deterministically, with no real
+        // time passing.
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(10, 20), 0.5, 1, 5);
+        LongSupplier clock = advancingClock(1);
+
+        SessionRunner.runSession(
+                players, agents, schedule,
+                BustHandler.ELIMINATE,
+                SessionEndCondition.LAST_PLAYER_STANDING.orAfter(5),
+                incrementingSeeds(),
+                logger,
+                clock);
+
+        List<GameEvent.BlindPosted> blindEvents = logger.getEvents().stream()
+                .filter(e -> e instanceof GameEvent.BlindPosted)
+                .map(e -> (GameEvent.BlindPosted) e)
+                .toList();
+
+        int firstHandBigBlindAmount = blindEvents.get(1).amount(); // [0]=SB, [1]=BB of hand 1
+        int lastHandBigBlindAmount = blindEvents.get(blindEvents.size() - 1).amount();
+
+        assertTrue(lastHandBigBlindAmount > firstHandBigBlindAmount,
+                "blinds should have escalated by the final hand of the session");
+    }
+
+    @Test
+    void runSession_dealerKeepsAlternatingAcrossABlindLevelRebuild() {
+        // SessionRunner rebuilds GameState when the blind level changes; this
+        // exercises that rebuild path for the first time (previously only
+        // BlindSchedule.constant existed, so the rebuild branch was dead code
+        // as far as any test was concerned) and confirms dealer rotation
+        // survives it correctly in heads-up play.
+        List<Player> players = makePlayers(2, 100_000);
+        List<PokerAgent> agents = List.of(new AlwaysCallAgent(), new AlwaysCallAgent());
+        InMemoryHandLogger logger = new InMemoryHandLogger();
+
+        BlindSchedule schedule = BlindSchedule.increasing(new BlindLevel(10, 20), 0.5, 1, 5);
+        LongSupplier clock = advancingClock(1);
+
+        SessionRunner.runSession(
+                players, agents, schedule,
+                BustHandler.ELIMINATE,
+                SessionEndCondition.LAST_PLAYER_STANDING.orAfter(6),
+                incrementingSeeds(),
+                logger,
+                clock);
+
+        List<Integer> dealerSeats = logger.getEvents().stream()
+                .filter(e -> e instanceof GameEvent.HandStarted)
+                .map(e -> ((GameEvent.HandStarted) e).dealerSeat())
+                .toList();
+
+        for (int i = 1; i < dealerSeats.size(); i++) {
+            assertNotEquals(dealerSeats.get(i - 1), dealerSeats.get(i),
+                    "dealer button must keep alternating across a blind-level GameState rebuild");
+        }
     }
 
     // -------------------------------------------------------------------------
