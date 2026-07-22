@@ -646,5 +646,70 @@ void bestHand_twoPairSameHighPairKickerDecides() {
     assertTrue(HandEvaluator.evaluateBestHand(qKicker) >
                HandEvaluator.evaluateBestHand(tKicker));
 }
+
+// -------------------------------------------------------------------------
+    // describeBestHand
+    // -------------------------------------------------------------------------
+
+    @Test
+    void describeBestHand_straightFlush() {
+        int[] cards = {32, 28, 24, 20, 16, 1, 49}; // 9c-8c-7c-6c-5c straight flush
+        assertEquals("Straight Flush, Nine High", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_quad() {
+        int[] cards = {0, 1, 2, 3, 48, 44, 40}; // AAAA K Q J
+        assertEquals("Four of a Kind, Aces", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_fullHouse() {
+        int[] cards = {0, 1, 2, 48, 49, 44, 40}; // AAA KK
+        assertEquals("Full House, Aces full of Kings", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_flush() {
+        int[] cards = {0, 48, 44, 40, 32, 5, 10}; // clubs A K Q J 9
+        assertEquals("Flush, Ace High", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_straight() {
+        int[] cards = {0, 49, 46, 43, 36, 4, 8}; // A K Q J T mixed suits
+        assertEquals("Straight, Ace High", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_triple() {
+        int[] cards = {0, 1, 2, 51, 45, 40, 35}; // AAA Ks Qd Jc 9s
+        assertEquals("Three of a Kind, Aces", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_twoPair() {
+        int[] cards = {0, 1, 48, 49, 47, 40, 33}; // AA KK Qs Jc 9d
+        assertEquals("Two Pair, Aces and Kings", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_pair() {
+        int[] cards = {0, 1, 51, 45, 40, 35, 28}; // AA Ks Qd Jc 9s 8c
+        assertEquals("Pair of Aces", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_highCard() {
+        int[] cards = {0, 49, 46, 43, 32, 30, 25}; // A K Q J 9 8 7, no pair/straight/flush
+        assertEquals("High Card, Ace", HandEvaluator.describeBestHand(cards));
+    }
+
+    @Test
+    void describeBestHand_lowRankUsesWordNotNumeral() {
+        // 5c, 6d, 7h, 8s, 9c + Ad, Kd -- straight across mixed suits, no flush
+        int[] cards = {16, 21, 26, 31, 32, 1, 49};
+        assertEquals("Straight, Nine High", HandEvaluator.describeBestHand(cards));
+    }
     
 }

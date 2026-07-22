@@ -107,7 +107,10 @@ public class HumanCliAgent implements PokerAgent {
         try {
             String line = in.readLine();
             if (line == null) {
-                throw new IllegalStateException("Input stream closed before a command was entered");
+                throw new IllegalStateException(
+                        "Input stream closed before a command was entered. "
+                        + "If you're launching via 'mvn exec:java', stdin may not be attached correctly -- "
+                        + "run 'java -cp target/classes com.andrei.pokerface.PlayHuman' instead.");
             }
             return line;
         } catch (IOException e) {
