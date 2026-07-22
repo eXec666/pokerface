@@ -315,4 +315,79 @@ public class HandEvaluator {
         int[] high = evaluateHighCard(cards);
         return encodeScore(0, high);
    }
+
+   /**
+    * Human-readable description of the best hand in cards, e.g. "Full House,
+    * Aces full of Kings". Mirrors evaluateBestHand's exact cascade order so
+    * the two never disagree about which hand type wins -- this is a pure
+    * text-formatting layer on top of the same evaluate* results, not a
+    * separate scoring path.
+    */
+   public static String describeBestHand(int[] cards) {
+        int[] sf = evaluateStraightFlush(cards);
+        if (sf.length > 0) return "Straight Flush, " + rankName(sf[0]) + " High";
+
+        int[] quad = evaluateQuad(cards);
+        if (quad.length > 0) return "Four of a Kind, " + rankNamePlural(quad[0]);
+
+        int[] fh = evaluateFullHouse(cards);
+        if (fh.length > 0) return "Full House, " + rankNamePlural(fh[0]) + " full of " + rankNamePlural(fh[1]);
+
+        int[] flush = evaluateFlush(cards);
+        if (flush.length > 0) return "Flush, " + rankName(flush[0]) + " High";
+
+        int[] straight = evaluateStraight(cards);
+        if (straight.length > 0) return "Straight, " + rankName(straight[0]) + " High";
+
+        int[] trip = evaluateTriple(cards);
+        if (trip.length > 0) return "Three of a Kind, " + rankNamePlural(trip[0]);
+
+        int[] twoPair = evaluateTwoPair(cards);
+        if (twoPair.length > 0) return "Two Pair, " + rankNamePlural(twoPair[0]) + " and " + rankNamePlural(twoPair[1]);
+
+        int[] pair = evaluatePair(cards);
+        if (pair.length > 0) return "Pair of " + rankNamePlural(pair[0]);
+
+        int[] high = evaluateHighCard(cards);
+        return "High Card, " + rankName(high[0]);
+   }
+
+   private static String rankName(int pokerValue) {
+        return switch (pokerValue) {
+            case 14 -> "Ace";
+            case 13 -> "King";
+            case 12 -> "Queen";
+            case 11 -> "Jack";
+            case 10 -> "Ten";
+            case 9 -> "Nine";
+            case 8 -> "Eight";
+            case 7 -> "Seven";
+            case 6 -> "Six";
+            case 5 -> "Five";
+            case 4 -> "Four";
+            case 3 -> "Three";
+            case 2 -> "Two";
+            default -> String.valueOf(pokerValue);
+        };
+   }
+
+   private static String rankNamePlural(int pokerValue) {
+        return switch (pokerValue) {
+            case 14 -> "Aces";
+            case 13 -> "Kings";
+            case 12 -> "Queens";
+            case 11 -> "Jacks";
+            case 10 -> "Tens";
+            case 9 -> "Nines";
+            case 8 -> "Eights";
+            case 7 -> "Sevens";
+            case 6 -> "Sixes";
+            case 5 -> "Fives";
+            case 4 -> "Fours";
+            case 3 -> "Threes";
+            case 2 -> "Twos";
+            default -> pokerValue + "s";
+        };
+   }
 }
+
