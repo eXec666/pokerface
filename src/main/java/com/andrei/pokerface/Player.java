@@ -97,6 +97,12 @@ public class Player {
     public int getTotalCommitted() { return totalCommitted; }
     public boolean isFolded() { return folded; }
     public boolean isAllIn() { return allIn; }
+    public void setStack(int amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("Stack cannot be negative");
+        }
+        this.stack = amount;
+    }
     /** Marks this player as permanently out of the session (e.g. busted in a tournament). */
     public void eliminate() { eliminated = true; }
     public boolean isEliminated() { return eliminated; }
