@@ -190,4 +190,38 @@ public class PlayerTest {
         p.addToStack(250);
         assertEquals(350, p.getStack());
     }
+
+    // -------------------------------------------------------------------------
+    // setStack() -- direct override for ring-game-style stack resets
+    // -------------------------------------------------------------------------
+
+    @Test
+    void setStack_overridesCurrentStackDirectly() {
+        Player p = new Player(0, "Alice", 100);
+        p.setStack(500);
+        assertEquals(500, p.getStack());
+    }
+
+    @Test
+    void setStack_bypassesCommitHistoryAndRoundState() {
+        Player p = new Player(0, "Alice", 1000);
+        p.commit(300);
+        p.setStack(1000);
+        assertEquals(1000, p.getStack(), "setStack must directly override the stack");
+        assertEquals(300, p.getRoundBet(), "setStack must not touch unrelated betting state");
+        assertEquals(300, p.getTotalCommitted());
+    }
+
+    @Test
+    void setStack_zeroIsAllowed() {
+        Player p = new Player(0, "Alice", 1000);
+        assertDoesNotThrow(() -> p.setStack(0));
+        assertEquals(0, p.getStack());
+    }
+
+    @Test
+    void setStack_negativeThrows() {
+        Player p = new Player(0, "Alice", 1000);
+        assertThrows(IllegalArgumentException.class, () -> p.setStack(-1));
+    }
 }
