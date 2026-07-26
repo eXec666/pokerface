@@ -65,7 +65,7 @@ public class BotStatsCollectorTest {
         long seatShuffleSeed = 7L;
 
         BotPerformanceReport report = BotRingStatsCollector.collectWithSeedRotation(
-                bots, 10, 20, 2000, 40_000, 100, dealSeedSource, agentSeedSource, seatShuffleSeed);
+                bots, 10, 20, 2000, 40_000, 100, 50, dealSeedSource, agentSeedSource, seatShuffleSeed);
 
         BotStatLine a = report.forBot("Random-A");
         BotStatLine b = report.forBot("Random-B");
@@ -89,7 +89,7 @@ public class BotStatsCollectorTest {
         IntSupplier seedSource = new Random(5)::nextInt;
 
         BotPerformanceReport report = BotRingStatsCollector.collect(
-                bots, 5, 10, 500, 3000, seedSource, 11L);
+                bots, 5, 10, 500, 3000, 100, seedSource, 11L);
 
         for (NamedAgent b : bots) {
             assertEquals(3000, report.forBot(b.name()).handsPlayed(),

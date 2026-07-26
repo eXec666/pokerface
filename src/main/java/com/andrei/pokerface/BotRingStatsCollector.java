@@ -9,14 +9,20 @@ import java.util.Random;
 import java.util.function.IntSupplier;
 
 /**
- * Runs RingGameRunner across seat-rotated sub-batches and aggregates bb/100
- * per bot NAME rather than per seat index. Rotation is necessary because
- * RingGameRunner alone always seats agent i at seat i for the whole batch,
- * conflating seat-position edge with bot skill. Here, bot i occupies seat
- * (i + offset) mod n for each of n rotation offsets, with hands split as
- * evenly as possible across offsets -- over the full collection every bot
- * spends an equal share of hands in every seat, cancelling the positional
- * confound out of the aggregate exactly.
+ * Runs RingGameRunner across seat-randomized sub-batches and aggregates
+ * bb/100 per bot NAME rather than per seat index.
+ *
+ * Randomization must be redrawn far more often than once per "rotation" of
+ * n offsets: with only n permutation draws (n = bot count), relative ORDER
+ * between bots (e.g. "always acts immediately after the calling station")
+ * is nowhere near averaged out by the time totalHands is exhausted, even
+ * though seat-INDEX time can be balanced exactly by a deterministic cyclic
+ * shift. A cyclic shift, in fact, provably CANNOT fix the order problem --
+ * it preserves every bot's relative position to every other bot on every
+ * offset, by construction. Hence seatShuffleBlockSize: the seat permutation
+ * is redrawn independently every seatShuffleBlockSize hands, decoupled
+ * entirely from bot count, giving as many independent order-permutation
+ * draws as the hand budget allows.
  */
 public final class BotRingStatsCollector {
 
@@ -31,10 +37,17 @@ public final class BotRingStatsCollector {
         return assignment;
     }
 
+    /**
+     * @param seatShuffleBlockSize hands played before the seat permutation is
+     *                             redrawn; smaller values give more independent
+     *                             permutation draws for a fixed totalHands, at
+     *                             the cost of more RingGameRunner.runBatch calls
+     */
     public static BotPerformanceReport collect(
             List<NamedAgent> bots,
             int smallBlind, int bigBlind, int buyIn,
-            int totalHands, IntSupplier seedSource, long seatShuffleSeed, HandLogger logger) {
+            int totalHands, int seatShuffleBlockSize,
+            IntSupplier seedSource, long seatShuffleSeed, HandLogger logger) {
 
         if (bots == null || bots.size() < 2) {
             throw new IllegalArgumentException("Need at least two bots to compare");
@@ -42,10 +55,11 @@ public final class BotRingStatsCollector {
         if (totalHands <= 0) {
             throw new IllegalArgumentException("totalHands must be positive");
         }
+        if (seatShuffleBlockSize <= 0) {
+            throw new IllegalArgumentException("seatShuffleBlockSize must be positive");
+        }
 
         int n = bots.size();
-        int baseHands = totalHands / n;
-        int remainder = totalHands % n;
         Random seatRandom = new Random(seatShuffleSeed);
 
         Map<String, List<Double>> bbSamplesByName = new LinkedHashMap<>();
@@ -53,11 +67,10 @@ public final class BotRingStatsCollector {
             bbSamplesByName.put(b.name(), new ArrayList<>());
         }
 
-        for (int offset = 0; offset < n; offset++) {
-            int handsThisRotation = baseHands + (offset < remainder ? 1 : 0);
-            if (handsThisRotation == 0) {
-                continue;
-            }
+        int handsRemaining = totalHands;
+        while (handsRemaining > 0) {
+            int handsThisBlock = Math.min(seatShuffleBlockSize, handsRemaining);
+            handsRemaining -= handsThisBlock;
 
             List<Integer> seatAssignment = shuffledSeatAssignment(n, seatRandom);
 
@@ -72,7 +85,7 @@ public final class BotRingStatsCollector {
             }
 
             RingGameResult result = RingGameRunner.runBatch(
-                    players, agents, smallBlind, bigBlind, buyIn, handsThisRotation, seedSource, logger);
+                    players, agents, smallBlind, bigBlind, buyIn, handsThisBlock, seedSource, logger);
 
             for (int[] handNet : result.netChipsPerHand()) {
                 for (int seat = 0; seat < n; seat++) {
@@ -90,23 +103,30 @@ public final class BotRingStatsCollector {
     }
 
     /** Convenience overload: no logging. */
-    public static BotPerformanceReport collect(List<NamedAgent> bots, int smallBlind, int bigBlind, int buyIn, int totalHands, IntSupplier seedSource, long seatShuffleSeed) {
-        return collect(bots, smallBlind, bigBlind, buyIn, totalHands, seedSource, seatShuffleSeed, HandLogger.NO_OP);
+    public static BotPerformanceReport collect(
+            List<NamedAgent> bots, int smallBlind, int bigBlind, int buyIn,
+            int totalHands, int seatShuffleBlockSize, IntSupplier seedSource, long seatShuffleSeed) {
+        return collect(bots, smallBlind, bigBlind, buyIn, totalHands, seatShuffleBlockSize,
+                seedSource, seatShuffleSeed, HandLogger.NO_OP);
     }
 
     /**
      * Same aggregation as collect(), but for bots whose policy is itself
      * seed-driven: totalHands is split into blocks of handsPerSeedBlock hands,
-     * and at the start of every block each bot's agent is rebuilt from its
-     * factory with a fresh seed drawn from agentSeedSource. Seat rotation
-     * still happens within every block exactly as in collect(). dealSeedSource
-     * and agentSeedSource must be independent streams -- conflating them would
-     * correlate agent reseeding with specific deals.
+     * and at the start of every such block each bot's agent is rebuilt from its
+     * factory with a fresh seed drawn from agentSeedSource. Independently,
+     * WITHIN each seed-block, the seat permutation is redrawn every
+     * seatShuffleBlockSize hands -- reseeding cadence and seat-shuffle cadence
+     * are deliberately decoupled, since they address different concerns
+     * (policy randomness vs. positional/order balance) and there's no reason
+     * to force them to move together. dealSeedSource and agentSeedSource must
+     * be independent streams -- conflating them would correlate agent
+     * reseeding with specific deals.
      */
     public static BotPerformanceReport collectWithSeedRotation(
             List<NamedAgentFactory> bots,
             int smallBlind, int bigBlind, int buyIn,
-            int totalHands, int handsPerSeedBlock,
+            int totalHands, int handsPerSeedBlock, int seatShuffleBlockSize,
             IntSupplier dealSeedSource,
             IntSupplier agentSeedSource,
             long seatShuffleSeed,
@@ -121,6 +141,9 @@ public final class BotRingStatsCollector {
         if (handsPerSeedBlock <= 0) {
             throw new IllegalArgumentException("handsPerSeedBlock must be positive");
         }
+        if (seatShuffleBlockSize <= 0) {
+            throw new IllegalArgumentException("seatShuffleBlockSize must be positive");
+        }
 
         int n = bots.size();
         Random seatRandom = new Random(seatShuffleSeed);
@@ -132,22 +155,18 @@ public final class BotRingStatsCollector {
         int handsRemaining = totalHands;
 
         while (handsRemaining > 0) {
-            int handsThisBlock = Math.min(handsPerSeedBlock, handsRemaining);
-            handsRemaining -= handsThisBlock;
+            int handsThisSeedBlock = Math.min(handsPerSeedBlock, handsRemaining);
+            handsRemaining -= handsThisSeedBlock;
 
             List<PokerAgent> freshAgents = new ArrayList<>(n);
             for (NamedAgentFactory b : bots) {
                 freshAgents.add(b.factory().apply(agentSeedSource.getAsInt()));
             }
 
-            int baseHandsPerOffset = handsThisBlock / n;
-            int remainder = handsThisBlock % n;
-
-            for (int offset = 0; offset < n; offset++) {
-                int handsThisRotation = baseHandsPerOffset + (offset < remainder ? 1 : 0);
-                if (handsThisRotation == 0) {
-                    continue;
-                }
+            int seedBlockHandsRemaining = handsThisSeedBlock;
+            while (seedBlockHandsRemaining > 0) {
+                int handsThisShuffleBlock = Math.min(seatShuffleBlockSize, seedBlockHandsRemaining);
+                seedBlockHandsRemaining -= handsThisShuffleBlock;
 
                 List<Integer> seatAssignment = shuffledSeatAssignment(n, seatRandom);
 
@@ -163,7 +182,7 @@ public final class BotRingStatsCollector {
                 }
 
                 RingGameResult result = RingGameRunner.runBatch(
-                        players, agents, smallBlind, bigBlind, buyIn, handsThisRotation, dealSeedSource, logger);
+                        players, agents, smallBlind, bigBlind, buyIn, handsThisShuffleBlock, dealSeedSource, logger);
 
                 for (int[] handNet : result.netChipsPerHand()) {
                     for (int seat = 0; seat < n; seat++) {
@@ -185,9 +204,10 @@ public final class BotRingStatsCollector {
     public static BotPerformanceReport collectWithSeedRotation(
             List<NamedAgentFactory> bots,
             int smallBlind, int bigBlind, int buyIn,
-            int totalHands, int handsPerSeedBlock,
+            int totalHands, int handsPerSeedBlock, int seatShuffleBlockSize,
             IntSupplier dealSeedSource, IntSupplier agentSeedSource, long seatShuffleSeed) {
-        return collectWithSeedRotation(bots, smallBlind, bigBlind, buyIn, totalHands, handsPerSeedBlock,
-                dealSeedSource, agentSeedSource, seatShuffleSeed, HandLogger.NO_OP);
+        return collectWithSeedRotation(bots, smallBlind, bigBlind, buyIn, totalHands,
+                handsPerSeedBlock, seatShuffleBlockSize, dealSeedSource, agentSeedSource,
+                seatShuffleSeed, HandLogger.NO_OP);
     }
 }
