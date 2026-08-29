@@ -12,7 +12,7 @@ import java.util.Optional;
 public class GameState {
 
     private final Deck deck;
-    private final int[] communityCards;   // fixed size 5; -1 = not yet dealt (sentinel, like CardUtils' range)
+    private final int[] communityCards;   // fixed size 5; -1 = not yet dealt
     private int communityCardsDealt;      // how many of the 5 slots are currently filled
 
     private final List<Player> players;   // all players seated at the table, indexed by seat order
@@ -66,9 +66,7 @@ public class GameState {
 
     /**
      * Registers the event subscriber for this table. Passing null resets to
-     * the no-op logger rather than throwing -- callers that want to
-     * temporarily disable logging (e.g. between debugging sessions) don't
-     * need a sentinel of their own.
+     * the no-op logger rather than throwing.
      */
     public void setLogger(HandLogger logger) {
         this.logger = (logger == null) ? HandLogger.NO_OP : logger;
@@ -105,7 +103,7 @@ public class GameState {
         logger.log(new GameEvent.CommunityCardDealt(round, communityCards[communityCardsDealt - 1], communityCardsDealt));
     }
 
-    /** Returns only the community cards dealt so far (safe to hand straight to HandEvaluator). */
+    /** Returns only the community cards dealt so far */
     public int[] getCommunityCards() {
         return Arrays.copyOf(communityCards, communityCardsDealt);
     }
@@ -177,8 +175,7 @@ public class GameState {
     /**
      * Walks forward from fromSeat (EXCLUSIVE) and returns the seat index of the
      * stepsForward-th live (non-eliminated) player encountered. Eliminated seats
-     * are skipped entirely -- they can never receive the button, a blind, or
-     * first-actor status, regardless of their raw seat distance.
+     * are skipped entirely.
      */
     private int liveSeatOffset(int fromSeat, int stepsForward) {
         int n = players.size();

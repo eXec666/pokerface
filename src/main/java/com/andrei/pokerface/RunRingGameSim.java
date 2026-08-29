@@ -19,9 +19,7 @@ public class RunRingGameSim {
         IntSupplier agentSeedSource = new Random(1337)::nextInt;
 
         BotPerformanceReport report = BotRingStatsCollector.collectWithSeedRotation(
-            bots, 10, 20, 2000, 200_000, 100, dealSeedSource, agentSeedSource, seatShuffleSeed);
-            
-
+            bots, 10, 20, 2000, 200_000, 100, 50, dealSeedSource, agentSeedSource, seatShuffleSeed);
 
         System.out.println(report.formatTable());
     }

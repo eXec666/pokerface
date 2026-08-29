@@ -93,19 +93,6 @@ public final class HandRunner {
         }
     }
 
-    /**
-     * Runs betting for the current street until every player who can still act
-     * has either matched the current bet or folded, or only one bettor remains.
-     * <p>
-     * GameState doesn't track "has everyone acted since the last raise" -- that
-     * state lives here instead. Algorithm: start needing one action from each
-     * player who can currently act (toAct = count of isActive() players). Every
-     * action consumes one. A RAISE reopens the betting for everyone else, so it
-     * resets toAct to (active count - 1) -- the raiser doesn't need to act again
-     * immediately, everyone else does. The round ends when toAct hits 0
-     * (everyone's had the last word with no further raise) or GameState reports
-     * isBettingOver() (a fold-out or a wave of all-ins ended it early).
-     */
     private static void runBettingRound(GameState state, List<PokerAgent> agents) {
         if (state.isBettingOver()) {
             return; // e.g. everyone left is already all-in from a previous street
@@ -121,12 +108,18 @@ public final class HandRunner {
             toAct--;
             if (state.getCurrentBet() > betBefore) {
                 // That action was a raise -- CALL/CHECK/FOLD never increase currentBet
-                // (CALL is capped at matching it, see GameState.processAction).
-                toAct = countActive(state) - 1;
+                // (CALL is capped at matching it, see GameState.processAction). Everyone
+                // else needs to respond to it. The raiser themselves only needs to be
+                // excluded from that count if they can still act again later -- if the
+                // raise itself put them all-in, countActive(state) already excludes them
+                // (isActive() is false), so subtracting 1 again would incorrectly skip a
+                // different player who still owes a response to this raise.
+                boolean raiserStillActive = state.getPlayers().get(actingSeat).isActive();
+                toAct = countActive(state) - (raiserStillActive ? 1 : 0);
             }
         }
     }
-
+    
     private static int countActive(GameState state) {
         return (int) state.getPlayers().stream().filter(Player::isActive).count();
     }
