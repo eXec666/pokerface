@@ -77,7 +77,6 @@ public final class CardUtils {
 
     /**
      * Converts only the first {@code count} cards of an array to a string.
-     * Useful for printing partial hands (e.g., community cards).
      */
     public static String handToString(int[] cards, int count) {
         if (cards == null || cards.length == 0 || count <= 0) {

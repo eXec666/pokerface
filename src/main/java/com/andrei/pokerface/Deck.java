@@ -38,10 +38,9 @@ public class Deck {
     }
 
     /**
-     * Discards the top card without returning it, mirroring live play "burning"
-     * a card before the flop, turn, and river. Functionally equivalent to
-     * calling deal() and ignoring the result, but named separately so intent
-     * is explicit and a burned card is never even exposed to a caller.
+     * Discards the top card without returning it. Functionally equivalent to
+     * calling deal() and ignoring the result, but named separately so
+     *  a burned card is never even exposed to a caller.
      */
     public void burn() {
         if (topIndex < 0) {
@@ -58,8 +57,7 @@ public class Deck {
     /**
      * Restores the deck to a full, unshuffled 52-card state so it can be reused
      * for the next hand. Callers should invoke shuffle(seed) immediately after
-     * reset() if they want a fresh random order (as GameState.startNewHand does) --
-     * reset() alone just refills and un-deals the cards.
+     * reset() if they want a fresh random order.
      */
     public void reset() {
         for (int i = 0; i < 52; i++) {

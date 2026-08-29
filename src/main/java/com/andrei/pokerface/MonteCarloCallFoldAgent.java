@@ -20,17 +20,22 @@ public class MonteCarloCallFoldAgent implements PokerAgent {
 
         int[] holeCards = view.myHoleCards();
         int[] communityCards = view.communityCards();
-        int numOpponents = 1; // Heads-up is assumed for now
+        int numOpponents = countLiveOpponents(view);
         int C = view.amountToCall();
         int P = view.potTotal();
         double equity = MonteCarloEquityEstimator.estimateEquity(holeCards, communityCards, numOpponents, trials, random);
         // decision threshold:
         double threshold = C / (double)(C + P);
-        if (C > 100) { // only print large bets -- filters out routine blind-level decisions
-        System.out.println("C=" + C + " P=" + P + " threshold=" + threshold + " equity=" + equity
-                + " -> " + (equity > threshold ? "CALL" : "FOLD"));
-        }
-
         return (equity > threshold) ? ActionResult.call() : ActionResult.fold();
+    }
+
+    private int countLiveOpponents(PlayerView view) {
+        int count = 0;
+        for (OpponentInfo p : view.players()) {
+            if (p.seatIndex() != view.mySeatIndex() && !p.folded()) {
+                count++;
+            }
+        }
+        return count;
     }
 }

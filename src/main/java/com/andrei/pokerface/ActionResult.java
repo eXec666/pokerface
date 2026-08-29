@@ -2,8 +2,7 @@ package com.andrei.pokerface;
 
 /**
  * Immutable result of a PokerAgent's decision: which action to take, and
- * the chip amount tied to it. Amount semantics mirror
- * GameState.processAction(Action, int):
+ * the chip amount tied to it. 
  *   - FOLD / CHECK : amount must be 0
  *   - CALL         : amount must be 0 (GameState computes the call size)
  *   - RAISE        : amount is the target roundBet total ("raise TO X"),

@@ -2,9 +2,7 @@ package com.andrei.pokerface;
 
 /**
  * Reference bot: checks when it owes nothing, otherwise calls. Never folds,
- * never raises. Useful as the simplest possible opponent for smoke-testing
- * HandRunner (deal -> bet -> showdown -> payout, nothing more) and as a
- * baseline in mixed-agent regression sessions.
+ * never raises.
  */
 public class AlwaysCallAgent implements PokerAgent {
     @Override

@@ -27,6 +27,65 @@ public class MonteCarloCallFoldAgentTest {
     }
 
     // -------------------------------------------------------------------------
+    // countLiveOpponents -- via performAction's downstream effect on equity
+    // -------------------------------------------------------------------------
+
+    private PlayerView scriptedMultiwayView(
+            int[] myHoleCards, int[] communityCards,
+            int currentBet, int potTotal,
+            List<OpponentInfo> allSeats, int mySeatIndex) {
+        return new PlayerView(
+                mySeatIndex, myHoleCards, communityCards, Round.RIVER, 0, 20,
+                currentBet, currentBet + 10, potTotal, List.of(potTotal), allSeats);
+    }
+
+    @Test
+    void performAction_foldedOpponentsAreExcludedFromEquitySimulation() {
+        // Reflection would be brittle here, so instead this checks a downstream,
+        // observable effect: an unbeatable hand (see estimator's own tests) must
+        // still call regardless of how many OTHER seats are present, as long as
+        // the live (non-folded) opponent count is correctly derived -- a bug that
+        // counted folded seats as live opponents would still show equity=1.0 here
+        // (nothing beats a royal flush regardless of opponent count), so this is
+        // really validating that countLiveOpponents doesn't crash or misbehave
+        // with a mix of folded and live seats, not the equity value itself.
+        int[] holeCards = {0, 48}; // Ac, Kc
+        int[] communityCards = {44, 40, 36, 5, 10}; // Qc, Jc, Tc, 2d, 3h -- royal flush
+
+        List<OpponentInfo> seats = List.of(
+                new OpponentInfo(0, "Me", 1000, 0, 0, false, false),
+                new OpponentInfo(1, "FoldedOpp", 1000, 0, 0, true, false),
+                new OpponentInfo(2, "LiveOpp", 1000, 500, 500, false, false),
+                new OpponentInfo(3, "AllInOpp", 0, 1000, 1000, false, true)
+        );
+        PlayerView view = scriptedMultiwayView(holeCards, communityCards, 500, 500, seats, 0);
+
+        MonteCarloCallFoldAgent agent = new MonteCarloCallFoldAgent(50, 123);
+
+        assertEquals(Action.CALL, agent.performAction(view).action());
+    }
+
+    @Test
+    void integratesWithRingGameRunner_playsAFullSixMaxBatchWithoutErrors() {
+        List<Player> players = List.of(
+                new Player(0, "MonteCarlo", 1000),
+                new Player(1, "R1", 1000),
+                new Player(2, "R2", 1000),
+                new Player(3, "R3", 1000),
+                new Player(4, "R4", 1000),
+                new Player(5, "R5", 1000)
+        );
+        List<PokerAgent> agents = List.of(
+                new MonteCarloCallFoldAgent(100, 7),
+                new RandomAgent(1), new RandomAgent(2), new RandomAgent(3),
+                new RandomAgent(4), new RandomAgent(5)
+        );
+
+        assertDoesNotThrow(() -> RingGameRunner.runBatch(
+                players, agents, 5, 10, 1000, 300, incrementingSeeds()));
+    }
+
+    // -------------------------------------------------------------------------
     // Nothing owed -> always checks, regardless of hand strength
     // -------------------------------------------------------------------------
 

@@ -318,10 +318,7 @@ public class HandEvaluator {
 
    /**
     * Human-readable description of the best hand in cards, e.g. "Full House,
-    * Aces full of Kings". Mirrors evaluateBestHand's exact cascade order so
-    * the two never disagree about which hand type wins -- this is a pure
-    * text-formatting layer on top of the same evaluate* results, not a
-    * separate scoring path.
+    * Aces full of Kings". 
     */
    public static String describeBestHand(int[] cards) {
         int[] sf = evaluateStraightFlush(cards);
